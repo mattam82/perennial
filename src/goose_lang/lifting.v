@@ -224,7 +224,7 @@ Local Hint Extern 1 (head_step _ _ _ _ _ _) => rewrite /head_step /= : core.
 Local Hint Extern 1 (relation.bind _ _ _ _ _) => monad_simpl; simpl : core.
 Local Hint Extern 1 (relation.runF _ _ _ _) => monad_simpl; simpl : core.
 (* Local Hint Extern 0 (head_step (CmpXchg _ _ _) _ _ _ _ _) => eapply CmpXchgS : core. *)
-Local Hint Extern 0 (head_step (AllocN _ _) _ _ _ _ _) => apply alloc_fresh : core.
+Local Hint Extern 0 (head_step (AllocN _) _ _ _ _ _) => apply alloc_fresh : core.
 Local Hint Extern 0 (head_step NewProph _ _ _ _ _) => apply new_proph_id_fresh : core.
 Local Hint Resolve to_of_val : core.
 
@@ -267,7 +267,7 @@ Local Ltac solve_atomic :=
     try solve [ apply atomically_is_val in H; auto ]
     |apply ectxi_language_sub_redexes_are_values; intros [] **; naive_solver].
 
-Global Instance alloc_atomic s v w : Atomic s (AllocN (Val v) (Val w)).
+Global Instance alloc_atomic s v w : Atomic s (AllocN (PairV v w)).
 Proof using Type.
   solve_atomic.
 Qed.
@@ -278,7 +278,7 @@ Global Instance prepare_write_atomic s v : Atomic s (PrepareWrite (Val v)).
 Proof using Type. solve_atomic. Qed.
 Global Instance load_atomic s v : Atomic s (Load (Val v)).
 Proof using Type. solve_atomic. Qed.
-Global Instance finish_store_atomic s v1 v2 : Atomic s (FinishStore (Val v1) (Val v2)).
+Global Instance finish_store_atomic s v1 v2 : Atomic s (FinishStore (PairV v1 v2)).
 Proof using Type. solve_atomic. Qed.
 Global Instance cmpxchg_atomic s v0 v1 v2 : Atomic s (CmpXchg (Val v0) (Val v1) (Val v2)).
 Proof using Type. solve_atomic. Qed.
@@ -564,12 +564,12 @@ Admitted.
 Lemma wp_allocN_seq s E t v (n: u64) :
   (0 < int.val n)%Z →
   val_ty v t ->
-  {{{ True }}} AllocN (Val $ LitV $ LitInt $ n) (Val v) @ s; E
+  {{{ True }}} AllocN (PairV (LitV $ LitInt $ n) v) @ s; E
   {{{ l, RET LitV (LitLoc l); [∗ list] i ∈ seq 0 (int.nat n),
                               ((l +ₗ[t] Z.of_nat i) ↦[t] v) }}}.
 Proof using Type.
   iIntros (Hn Hty Φ) "_ HΦ". iApply wp_lift_atomic_head_step_no_fork; auto.
-  iIntros (σ1 κ κs k) "[Hσ Hκs] !>"; iSplit; first by auto with lia.
+  iIntros (σ1 κ κs k) "[Hσ Hκs] !>"; iSplit; first by eauto with lia.
   iNext; iIntros (v2 σ2 efs Hstep); inv_head_step.
   iMod (gen_heap_alloc_gen
           _ (heap_array

@@ -252,20 +252,18 @@ Section goose_lang.
       Γ ⊢ e2 : t ->
       Γ ⊢ If cond e1 e2 : t
   (* TODO: extend to handle structs *)
-  | alloc_hasTy n v t :
-      Γ ⊢ n : uint64T ->
-      Γ ⊢ v : t ->
-      Γ ⊢ AllocN n v : arrayT t
+  | alloc_hasTy nv t :
+      Γ ⊢ nv : prodT uint64T t ->
+      Γ ⊢ AllocN nv : arrayT t
   | load_hasTy l t :
       Γ ⊢ l : refT t ->
       Γ ⊢ Load l : t
   | prepare_write_hasTy l t :
       Γ ⊢ l : refT t ->
       Γ ⊢ PrepareWrite l : unitT
-  | finish_store_hasTy l v t :
-      Γ ⊢ l : refT t ->
-      Γ ⊢ v : t ->
-      Γ ⊢ FinishStore l v : unitT
+  | finish_store_hasTy lv t :
+      Γ ⊢ lv : prodT (refT t) t ->
+      Γ ⊢ FinishStore lv : unitT
   | start_read_hasTy l t :
       Γ ⊢ l : refT t ->
       Γ ⊢ StartRead l : t
@@ -359,6 +357,7 @@ Section goose_lang.
       econstructor; eauto.
     - econstructor; eauto.
       econstructor; eauto.
+      econstructor; eauto.
       + apply array_ref_hasTy.
         econstructor; eauto.
       + econstructor; eauto.
@@ -370,7 +369,8 @@ Section goose_lang.
     Γ ⊢ v : t ->
     Γ ⊢ ref v : refT t.
   Proof.
-    eauto.
+    intros.
+    eauto 10.
   Qed.
 
   Theorem zero_val_ty ty Γ :
@@ -595,7 +595,7 @@ Module test.
 Section goose_lang.
   Context `{ext_ty: ext_types}.
   Local Open Scope heap_types.
-  Theorem panic_test Γ : Γ ⊢ (Panic "";; #())%E : unitT.
+  Theorem panic_test Γ : Γ ⊢ (Panic #();; #())%E : unitT.
   Proof.
     typecheck.
   Qed.

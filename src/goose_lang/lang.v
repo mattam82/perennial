@@ -108,21 +108,19 @@ Inductive bin_op : Set :=
   | OffsetOp (k:Z) (* Pointer offset *)
 .
 
-Inductive arity : Set := args0 | args1 | args2.
-
-Inductive prim_op : arity -> Set :=
+Inductive prim_op : Set :=
   (* a stuck expression, to represent undefined behavior *)
-  | PanicOp (s: string) : prim_op args0
-  | AllocNOp : prim_op args2 (* array length (positive number), initial value *)
-  | PrepareWriteOp : prim_op args1 (* loc *)
-  | FinishStoreOp : prim_op args2 (* pointer, value *)
+  | PanicOp
+  | AllocNOp (* array length (positive number), initial value *)
+  | PrepareWriteOp (* loc *)
+  | FinishStoreOp (* pointer, value *)
   (* non-atomic loads (which conflict with stores) *)
-  | StartReadOp : prim_op args1 (* loc *)
-  | FinishReadOp : prim_op args1 (* loc *)
+  | StartReadOp (* loc *)
+  | FinishReadOp (* loc *)
   (* atomic loads (which still conflict with non-atomic stores) *)
-  | LoadOp : prim_op args1
-  | InputOp : prim_op args1
-  | OutputOp : prim_op args1
+  | LoadOp
+  | InputOp
+  | OutputOp
 .
 
 Inductive expr :=
@@ -147,10 +145,7 @@ Inductive expr :=
   (* Concurrency *)
   | Fork (e : expr)
   (* Heap-based primitives *)
-  | Primitive0 (op: prim_op args0)
-  | Primitive1 (op: prim_op args1) (e : expr)
-  | Primitive2 (op: prim_op args2) (e1 e2 : expr)
-  (* | Primitive3 (op: prim_op args3) (e0 e1 e2 : expr) *)
+  | Primitive (op: prim_op) (e : expr)
   | CmpXchg (e0 : expr) (e1 : expr) (e2 : expr) (* Compare-exchange *)
   (* External FFI *)
   | ExternalOp (op: external) (e: expr)
@@ -169,15 +164,15 @@ with val :=
 Bind Scope expr_scope with expr.
 Bind Scope val_scope with val.
 
-Notation Panic s := (Primitive0 (PanicOp s)).
-Notation AllocN := (Primitive2 AllocNOp).
-Notation PrepareWrite := (Primitive1 PrepareWriteOp).
-Notation FinishStore := (Primitive2 FinishStoreOp).
-Notation StartRead := (Primitive1 StartReadOp).
-Notation FinishRead := (Primitive1 FinishReadOp).
-Notation Load := (Primitive1 LoadOp).
-Notation Input := (Primitive1 InputOp).
-Notation Output := (Primitive1 OutputOp).
+Notation Panic := (Primitive PanicOp).
+Notation AllocN := (Primitive AllocNOp).
+Notation PrepareWrite := (Primitive PrepareWriteOp).
+Notation FinishStore := (Primitive FinishStoreOp).
+Notation StartRead := (Primitive StartReadOp).
+Notation FinishRead := (Primitive FinishReadOp).
+Notation Load := (Primitive LoadOp).
+Notation Input := (Primitive InputOp).
+Notation Output := (Primitive OutputOp).
 
 Fixpoint flatten_struct (v: val) : list val :=
   match v with
@@ -350,17 +345,8 @@ Global Instance un_op_eq_dec : EqDecision un_op.
 Proof. solve_decision. Defined.
 Global Instance bin_op_eq_dec : EqDecision bin_op.
 Proof. solve_decision. Defined.
-Global Instance arity_eq_dec : EqDecision arity.
+Global Instance prim_op_eq_dec : EqDecision prim_op.
 Proof. solve_decision. Defined.
-Global Instance prim_op_eq_dec ar : EqDecision (prim_op ar).
-Proof.
-  hnf; intros; hnf.
-  (* TODO: there's probably a very simple proof directly using a dependent
-  pattern match *)
-  destruct x; dependent destruction y; eauto.
-  destruct (decide (s = s0));
-    [ subst; left | right; inversion 1]; done.
-Defined.
 Global Instance expr_eq_dec : EqDecision expr.
 Proof using ext.
   clear ffi_semantics ffi.
@@ -372,13 +358,8 @@ Proof using ext.
       | Rec f x e, Rec f' x' e' =>
         cast_if_and3 (decide (f = f')) (decide (x = x')) (decide (e = e'))
       | App e1 e2, App e1' e2' => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
-      | Primitive0 op, Primitive0 op' => cast_if (decide (op = op'))
-      | Primitive1 op e, Primitive1 op' e' =>
+      | Primitive op e, Primitive op' e' =>
         cast_if_and (decide (op = op')) (decide (e = e'))
-      | Primitive2 op e1 e2, Primitive2 op' e1' e2' =>
-        cast_if_and3 (decide (op = op')) (decide (e1 = e1')) (decide (e2 = e2'))
-      (* | Primitive3 op e0 e1 e2, Primitive3 op' e0' e1' e2' =>
-        cast_if_and4 (decide (op = op')) (decide (e0 = e0')) (decide (e1 = e1')) (decide (e2 = e2')) *)
       | UnOp o e, UnOp o' e' => cast_if_and (decide (o = o')) (decide (e = e'))
       | BinOp o e1 e2, BinOp o' e1' e2' =>
         cast_if_and3 (decide (o = o')) (decide (e1 = e1')) (decide (e2 = e2'))
@@ -509,51 +490,9 @@ Proof.
                                end) _); by intros [].
 Qed.
 
-Inductive prim_op' := | a_prim_op {ar} (op: prim_op ar).
-Instance prim_op_prim_op'_iso ar : Inj eq eq (@a_prim_op ar).
+Global Instance prim_op_countable : Countable prim_op.
 Proof.
-  hnf; intros.
-  inversion H.
-  apply Eqdep_dec.inj_pair2_eq_dec; auto.
-  intros x0 y0; destruct (decide (x0 = y0)); auto.
-Qed.
-Instance prim_op'_eq_dec : EqDecision prim_op'.
-hnf; intros; hnf.
-destruct x as [ar op], y as [ar' op'].
-destruct (decide (ar = ar')); subst.
-- destruct (decide (op = op')); subst; auto.
-  right; intro.
-  apply prim_op_prim_op'_iso in H; auto.
-- right.
-  inversion 1; auto.
-Qed.
-
-Global Instance prim_op'_countable : Countable prim_op'.
-Proof.
-  refine (inj_countable' (λ op, let 'a_prim_op op := op in
-                                match op with
-                                | PanicOp s => inl s
-                                | AllocNOp => inr 0
-                                | PrepareWriteOp => inr 1
-                                | FinishStoreOp => inr 2
-                                | StartReadOp => inr 3
-                                | FinishReadOp => inr 4
-                                | LoadOp => inr 5
-                                | InputOp => inr 6
-                                | OutputOp => inr 7
-                                end)
-                         (λ v, match v with
-                               | inl s => a_prim_op _
-                               | inr 0 => a_prim_op _
-                               | inr 1 => a_prim_op _
-                               | inr 2 => a_prim_op _
-                               | inr 3 => a_prim_op _
-                               | inr 4 => a_prim_op _
-                               | inr 5 => a_prim_op _
-                               | inr 6 => a_prim_op _
-                               | inr 7 => a_prim_op _
-                               | _ => a_prim_op (PanicOp "")
-                               end) _); intros [_ []]; trivial.
+  solve_countable prim_op_rec 10%nat.
 Qed.
 
 Inductive basic_type :=
@@ -563,7 +502,7 @@ Inductive basic_type :=
   | litVal (l: base_lit)
   | un_opVal (op:un_op)
   | bin_opVal (op:bin_op)
-  | primOpVal (op:prim_op')
+  | primOpVal (op:prim_op)
   | externOp (op:external)
   | extVal (x:ext_val)
 .
@@ -596,21 +535,6 @@ Proof.
                                end) _); by intros [].
 Qed.
 
-Definition to_prim_op : {f: forall ar (op: prim_op'), prim_op ar |
-                         forall ar op, f ar (a_prim_op op) = op}.
-  unshelve refine (exist _
-                         (fun (ar: arity) '(a_prim_op op) =>
-                            ltac:(destruct ar, op)) _);
-    (* solve equality cases by unification *)
-    [..|destruct op; eauto];
-    (* solve default cases with an arbitrary value *)
-    solve [ constructor; auto using "" ].
-(* intentionally opaque since the type signature gives the only needed
-correctness condition *)
-Qed.
-
-Definition to_prim_op_correct := proj2_sig to_prim_op.
-
 Global Instance expr_countable : Countable expr.
 Proof using ext.
   clear ffi_semantics ffi.
@@ -621,10 +545,7 @@ Proof using ext.
      | Var x => GenLeaf (stringVal x)
      | Rec f x e => GenNode 1 [GenLeaf $ binderVal f; GenLeaf $ binderVal x; go e]
      | App e1 e2 => GenNode 2 [go e1; go e2]
-     | Primitive0 op => GenNode 21 [GenLeaf $ primOpVal $ a_prim_op op]
-     | Primitive1 op e => GenNode 22 [GenLeaf $ primOpVal $ a_prim_op op; go e]
-     | Primitive2 op e1 e2 => GenNode 23 [GenLeaf $ primOpVal $ a_prim_op op; go e1; go e2]
-     (* | Primitive3 op e0 e1 e2 => GenNode 24 [GenLeaf $ primOpVal $ a_prim_op op; go e0; go e1; go e2] *)
+     | Primitive op e => GenNode 22 [GenLeaf $ primOpVal $ op; go e]
      | UnOp op e => GenNode 3 [GenLeaf $ un_opVal op; go e]
      | BinOp op e1 e2 => GenNode 4 [GenLeaf $ bin_opVal op; go e1; go e2]
      | If e0 e1 e2 => GenNode 5 [go e0; go e1; go e2]
@@ -658,10 +579,7 @@ Proof using ext.
      | GenLeaf (stringVal x) => Var x
      | GenNode 1 [GenLeaf (binderVal f); GenLeaf (binderVal x); e] => Rec f x (go e)
      | GenNode 2 [e1; e2] => App (go e1) (go e2)
-     | GenNode 21 [GenLeaf (primOpVal op)] => Primitive0 (`to_prim_op args0 op)
-     | GenNode 22 [GenLeaf (primOpVal op); e] => Primitive1 (`to_prim_op args1 op) (go e)
-     | GenNode 23 [GenLeaf (primOpVal op); e1; e2] => Primitive2 (`to_prim_op args2 op) (go e1) (go e2)
-     (* | GenNode 24 [GenLeaf (primOpVal op); e0; e1; e2] => Primitive3 (`to_prim_op args3 op) (go e0) (go e1) (go e2) *)
+     | GenNode 22 [GenLeaf (primOpVal op); e] => Primitive op (go e)
      | GenNode 3 [GenLeaf (un_opVal op); e] => UnOp op (go e)
      | GenNode 4 [GenLeaf (bin_opVal op); e1; e2] => BinOp op (go e1) (go e2)
      | GenNode 5 [e0; e1; e2] => If (go e0) (go e1) (go e2)
@@ -691,7 +609,7 @@ Proof using ext.
    for go).
  refine (inj_countable' enc dec _).
  refine (fix go (e : expr) {struct e} := _ with gov (v : val) {struct v} := _ for go).
-  - destruct e as [v| | | | | | | | | | | | | | | | | | | |]; simpl; f_equal;
+  - destruct e as [v| | | | | | | | | | | | | | | | | |]; simpl; f_equal;
       rewrite ?to_prim_op_correct;
       [exact (gov v)|done..].
  - destruct v; by f_equal.
@@ -724,12 +642,7 @@ Inductive ectx_item :=
   | InjLCtx
   | InjRCtx
   | CaseCtx (e1 : expr) (e2 : expr)
-  | Primitive1Ctx  (op: prim_op args1)
-  | Primitive2LCtx (op: prim_op args2) (e2 : expr)
-  | Primitive2RCtx (op: prim_op args2) (v1 : val)
-  (* | Primitive3LCtx (op: prim_op args3) (e1 : expr) (e2 : expr)
-  | Primitive3MCtx (op: prim_op args3) (v0 : val) (e2 : expr)
-  | Primitive3RCtx (op: prim_op args3) (v0 : val) (v1 : val) *)
+  | PrimitiveCtx  (op: prim_op)
   | ExternalOpCtx (op : external)
   | CmpXchgLCtx (e1 : expr) (e2 : expr)
   | CmpXchgMCtx (v1 : val) (e2 : expr)
@@ -760,12 +673,7 @@ Fixpoint fill_item (Ki : ectx_item) (e : expr) : expr :=
   | InjLCtx => InjL e
   | InjRCtx => InjR e
   | CaseCtx e1 e2 => Case e e1 e2
-  | Primitive1Ctx op => Primitive1 op e
-  | Primitive2LCtx op e2 => Primitive2 op e e2
-  | Primitive2RCtx op v1 => Primitive2 op (Val v1) e
-  (* | Primitive3LCtx op e1 e2 => Primitive3 op e e1 e2
-  | Primitive3MCtx op v0 e1 => Primitive3 op (Val v0) e e1
-  | Primitive3RCtx op v0 v1 => Primitive3 op (Val v0) (Val v1) e *)
+  | PrimitiveCtx op => Primitive op e
   | ExternalOpCtx op => ExternalOp op e
   | CmpXchgLCtx e1 e2 => CmpXchg e e1 e2
   | CmpXchgMCtx v0 e2 => CmpXchg (Val v0) e e2
@@ -793,10 +701,7 @@ Fixpoint subst (x : string) (v : val) (e : expr)  : expr :=
   | InjR e => InjR (subst x v e)
   | Case e0 e1 e2 => Case (subst x v e0) (subst x v e1) (subst x v e2)
   | Fork e => Fork (subst x v e)
-  | Primitive0 op => Primitive0 op
-  | Primitive1 op e => Primitive1 op (subst x v e)
-  | Primitive2 op e1 e2 => Primitive2 op (subst x v e1) (subst x v e2)
-  (* | Primitive3 op e1 e2 e3 => Primitive3 op (subst x v e1) (subst x v e2) (subst x v e3) *)
+  | Primitive op e => Primitive op (subst x v e)
   | ExternalOp op e => ExternalOp op (subst x v e)
   | CmpXchg e0 e1 e2 => CmpXchg (subst x v e0) (subst x v e1) (subst x v e2)
   | NewProph => NewProph
@@ -1019,7 +924,7 @@ Fixpoint head_trans (e: expr) :
   | Case (Val (InjLV v)) e1 e2 => ret_expr $ App e1 (Val v)
   | Case (Val (InjRV v)) e1 e2 => ret_expr $ App e2 (Val v)
   | Fork e => ret ([], Val $ LitV LitUnit, [e])
-  | AllocN (Val (LitV (LitInt n))) (Val v) =>
+  | AllocN (Val (PairV (LitV (LitInt n)) v)) =>
     atomically
       (check (0 < int.val n)%Z;;
        l ← allocateN (int.val n * length (flatten_struct v));
@@ -1059,7 +964,7 @@ Fixpoint head_trans (e: expr) :
         | Reading v 0 => ret v
         | _ => undefined
         end)
-  | FinishStore (Val (LitV (LitLoc l))) (Val v) =>
+  | FinishStore (Val (PairV (LitV (LitLoc l)) v)) =>
     atomically
       (nav ← reads (λ σ, σ.(heap) !! l);
        check (is_Writing nav);;
@@ -1159,7 +1064,7 @@ Proof using ext. clear ffi_semantics ffi.
 Lemma alloc_fresh v (n: u64) σ :
   let l := fresh_locs (dom (gset loc) σ.(heap)) in
   (0 < int.val n)%Z →
-  head_step (AllocN ((Val $ LitV $ LitInt $ n)) (Val v)) σ []
+  head_step (AllocN (Val $ PairV (LitV $ LitInt $ n) v)) σ []
             (Val $ LitV $ LitLoc l) (state_init_heap l (int.val n) v σ) [].
 Proof.
   intros.
@@ -1270,12 +1175,12 @@ End goose_lang.
 Bind Scope expr_scope with expr.
 Bind Scope val_scope with val.
 
-Notation Panic s := (Primitive0 (PanicOp s)).
-Notation AllocN := (Primitive2 AllocNOp).
-Notation PrepareWrite := (Primitive1 PrepareWriteOp).
-Notation FinishStore := (Primitive2 FinishStoreOp).
-Notation StartRead := (Primitive1 StartReadOp).
-Notation FinishRead := (Primitive1 FinishReadOp).
-Notation Load := (Primitive1 LoadOp).
-Notation Input := (Primitive1 InputOp).
-Notation Output := (Primitive1 OutputOp).
+Notation Panic := (Primitive PanicOp).
+Notation AllocN := (Primitive AllocNOp).
+Notation PrepareWrite := (Primitive PrepareWriteOp).
+Notation FinishStore := (Primitive FinishStoreOp).
+Notation StartRead := (Primitive StartReadOp).
+Notation FinishRead := (Primitive FinishReadOp).
+Notation Load := (Primitive LoadOp).
+Notation Input := (Primitive InputOp).
+Notation Output := (Primitive OutputOp).
